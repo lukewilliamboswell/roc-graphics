@@ -1,19 +1,9 @@
-use crate::{
-    graphics::{
-        colors::Rgba,
-        lowlevel::buffer::create_rect_buffers,
-        lowlevel::{buffer::MAX_QUADS, ortho::update_ortho_buffer},
-        lowlevel::{buffer::QUAD_INDICES, pipelines},
-        primitives::{
-            rect::{Rect, RectElt},
-            text::build_glyph_brush,
-        },
-    },
-    roc::{self, Bounds, RocElem, RocElemTag, RocEvent},
-};
+use crate::glue::discriminant_Elem;
+use crate::graphics;
+use crate::glue;
+use crate::roc;
 use cgmath::{Vector2, Vector4};
 use glyph_brush::{GlyphCruncher, OwnedSection};
-use pipelines::RectResources;
 use std::{
     error::Error,
     time::{Duration, Instant},
@@ -36,7 +26,7 @@ use winit::{
 
 const TIME_BETWEEN_TICKS: Duration = Duration::new(0, 1000 / 60);
 
-pub fn run_event_loop(title: &str, window_bounds: Bounds) -> Result<(), Box<dyn Error>> {
+pub fn run_event_loop(title: &str, window_bounds: glue::Bounds) -> Result<(), Box<dyn Error>> {
     let (mut model, mut elems) = roc::init_and_render(window_bounds);
 
     // Open window and create a surface
@@ -108,9 +98,9 @@ pub fn run_event_loop(title: &str, window_bounds: Bounds) -> Result<(), Box<dyn 
 
     surface.configure(&gpu_device, &surface_config);
 
-    let rect_resources = pipelines::make_rect_pipeline(&gpu_device, &surface_config);
+    let rect_resources = graphics::lowlevel::pipelines::make_rect_pipeline(&gpu_device, &surface_config);
 
-    let mut glyph_brush = build_glyph_brush(&gpu_device, render_format)?;
+    let mut glyph_brush = graphics::primitives::text::build_glyph_brush(&gpu_device, render_format)?;
     let mut keyboard_modifiers = ModifiersState::empty();
 
     // Render loop
@@ -144,7 +134,7 @@ pub fn run_event_loop(title: &str, window_bounds: Bounds) -> Result<(), Box<dyn 
                     },
                 );
 
-                update_ortho_buffer(
+                graphics::lowlevel::ortho::update_ortho_buffer(
                     size.width,
                     size.height,
                     &gpu_device,
@@ -152,7 +142,7 @@ pub fn run_event_loop(title: &str, window_bounds: Bounds) -> Result<(), Box<dyn 
                     &cmd_queue,
                 );
 
-                update_and_rerender!(RocEvent::Resize(Bounds {
+                update_and_rerender!(glue::Event::Resize(glue::Bounds {
                     height: size.height as f32,
                     width: size.width as f32,
                 }));
@@ -171,9 +161,10 @@ pub fn run_event_loop(title: &str, window_bounds: Bounds) -> Result<(), Box<dyn 
                     },
                 ..
             } => {
+                let kc = roc_keycode(&keycode);
                 let roc_event = match input_state {
-                    ElementState::Pressed => RocEvent::KeyDown(keycode.into()),
-                    ElementState::Released => RocEvent::KeyUp(keycode.into()),
+                    ElementState::Pressed => glue::Event::KeyDown(kc),
+                    ElementState::Released => glue::Event::KeyUp(kc),
                 };
 
                 model = roc::update(model, roc_event);
@@ -203,7 +194,7 @@ pub fn run_event_loop(title: &str, window_bounds: Bounds) -> Result<(), Box<dyn 
                 for elem in elems.iter() {
                     let (_bounds, drawable) = to_drawable(
                         elem,
-                        Bounds {
+                        glue::Bounds {
                             width: size.width as f32,
                             height: size.height as f32,
                         },
@@ -219,7 +210,7 @@ pub fn run_event_loop(title: &str, window_bounds: Bounds) -> Result<(), Box<dyn 
                         &gpu_device,
                         &rect_resources,
                         wgpu::LoadOp::Load,
-                        Bounds {
+                        glue::Bounds {
                             width: size.width as f32,
                             height: size.height as f32,
                         },
@@ -252,7 +243,7 @@ pub fn run_event_loop(title: &str, window_bounds: Bounds) -> Result<(), Box<dyn 
 
                     let tick = now.saturating_duration_since(app_start_time);
 
-                    update_and_rerender!(RocEvent::Tick(tick));
+                    update_and_rerender!(tick_event(&tick));
 
                     *control_flow = winit::event_loop::ControlFlow::WaitUntil(next_tick);
                 }
@@ -268,14 +259,14 @@ pub fn run_event_loop(title: &str, window_bounds: Bounds) -> Result<(), Box<dyn 
 }
 
 fn draw_rects(
-    all_rects: &[RectElt],
+    all_rects: &[graphics::primitives::rect::RectElt],
     cmd_encoder: &mut CommandEncoder,
     texture_view: &TextureView,
     gpu_device: &wgpu::Device,
-    rect_resources: &RectResources,
+    rect_resources: &graphics::lowlevel::pipelines::RectResources,
     load_op: LoadOp<wgpu::Color>,
 ) {
-    let rect_buffers = create_rect_buffers(gpu_device, cmd_encoder, all_rects);
+    let rect_buffers = graphics::lowlevel::buffer::create_rect_buffers(gpu_device, cmd_encoder, all_rects);
 
     let mut render_pass = begin_render_pass(cmd_encoder, texture_view, load_op);
 
@@ -290,7 +281,11 @@ fn draw_rects(
         wgpu::IndexFormat::Uint16,
     );
 
-    render_pass.draw_indexed(0..QUAD_INDICES.len() as u32, 0, 0..MAX_QUADS as u32);
+    render_pass.draw_indexed(
+        0..graphics::lowlevel::buffer::QUAD_INDICES.len() as u32,
+        0,
+      0..graphics::lowlevel::buffer::MAX_QUADS as u32,
+    );
 }
 
 fn begin_render_pass<'a>(
@@ -315,7 +310,7 @@ fn begin_render_pass<'a>(
 #[derive(Clone, Debug)]
 struct Drawable {
     pos: Vector2<f32>,
-    bounds: Bounds,
+    bounds: glue::Bounds,
     content: DrawableContent,
 }
 
@@ -325,9 +320,9 @@ enum DrawableContent {
     /// the text, and making a Section is a convenient way to compute those bounds.
     Text(OwnedSection, Vector2<f32>),
     FillRect {
-        color: Rgba,
+        color: graphics::colors::Rgba,
         border_width: f32,
-        border_color: Rgba,
+        border_color: graphics::colors::Rgba,
     },
 }
 
@@ -338,9 +333,9 @@ fn process_drawable(
     cmd_encoder: &mut CommandEncoder,
     texture_view: &TextureView,
     gpu_device: &wgpu::Device,
-    rect_resources: &RectResources,
+    rect_resources: &graphics::lowlevel::pipelines::RectResources,
     load_op: LoadOp<wgpu::Color>,
-    texture_size: Bounds,
+    texture_size: glue::Bounds,
 ) {
     draw(
         drawable.bounds,
@@ -358,7 +353,7 @@ fn process_drawable(
 }
 
 fn draw(
-    bounds: Bounds,
+    bounds: glue::Bounds,
     content: DrawableContent,
     pos: Vector2<f32>,
     staging_belt: &mut wgpu::util::StagingBelt,
@@ -366,9 +361,9 @@ fn draw(
     cmd_encoder: &mut CommandEncoder,
     texture_view: &TextureView,
     gpu_device: &wgpu::Device,
-    rect_resources: &RectResources,
+    rect_resources: &graphics::lowlevel::pipelines::RectResources,
     load_op: LoadOp<wgpu::Color>,
-    texture_size: Bounds,
+    texture_size: glue::Bounds,
 ) {
     use DrawableContent::*;
 
@@ -393,8 +388,8 @@ fn draw(
             border_color,
         } => {
             // TODO store all these colors and things in FillRect
-            let rect_elt = RectElt {
-                rect: Rect {
+            let rect_elt = graphics::primitives::rect::RectElt {
+                rect: graphics::primitives::rect::Rect {
                     pos,
                     width: bounds.width,
                     height: bounds.height,
@@ -419,17 +414,16 @@ fn draw(
 
 /// focused_elem is the currently-focused element (or NULL if nothing has the focus)
 fn to_drawable(
-    elem: &RocElem,
-    bounds: Bounds,
+    elem: &glue::Elem,
+    bounds: glue::Bounds,
     glyph_brush: &mut GlyphBrush<()>,
-) -> (Bounds, Drawable) {
-    use RocElemTag::*;
+) -> (glue::Bounds, Drawable) {
 
-    match elem.tag() {
-        Rect => {
-            let rect = unsafe { &elem.entry().rect };
+    match elem.discriminant() {
+        discriminant_Elem::Rect => {
+            let rect = unsafe { elem.as_Rect() };
 
-            let bounds = Bounds {
+            let bounds = glue::Bounds {
                 width: rect.width,
                 height: rect.height,
             };
@@ -438,16 +432,17 @@ fn to_drawable(
                 pos: (rect.left, rect.top).into(),
                 bounds,
                 content: DrawableContent::FillRect {
-                    color: rect.color,
+                    color: to_color(rect.color),
                     border_width: 1.0,
-                    border_color: rect.color,
+                    border_color: to_color(rect.color),
                 },
             };
 
             (bounds, drawable)
-        }
-        Text => {
-            let text = unsafe { &elem.entry().text };
+        },
+        discriminant_Elem::Text => {
+            let text = unsafe { elem.as_Text() };
+
             let is_centered = true; // TODO don't hardcode this
             let layout = wgpu_glyph::Layout::default().h_align(if is_centered {
                 wgpu_glyph::HorizontalAlign::Center
@@ -455,7 +450,12 @@ fn to_drawable(
                 wgpu_glyph::HorizontalAlign::Left
             });
 
-            let section = owned_section_from_str(text.text.as_str(),text.color, text.size, bounds, layout);
+            let section = owned_section_from_str(
+                text.text.as_str(),
+                to_color(text.color), 
+                text.size, 
+                bounds, 
+                layout);
 
             // Calculate the bounds and offset by measuring glyphs
             let text_bounds;
@@ -463,7 +463,7 @@ fn to_drawable(
 
             match glyph_brush.glyph_bounds(section.to_borrowed()) {
                 Some(glyph_bounds) => {
-                    text_bounds = Bounds {
+                    text_bounds = glue::Bounds {
                         width: glyph_bounds.max.x - glyph_bounds.min.x,
                         height: glyph_bounds.max.y - glyph_bounds.min.y,
                     };
@@ -471,7 +471,7 @@ fn to_drawable(
                     offset = (-glyph_bounds.min.x, -glyph_bounds.min.y).into();
                 }
                 None => {
-                    text_bounds = Bounds {
+                    text_bounds = glue::Bounds {
                         width: 0.0,
                         height: 0.0,
                     };
@@ -487,15 +487,15 @@ fn to_drawable(
             };
 
             (text_bounds, drawable)
-        }
+        },
     }
 }
 
 fn owned_section_from_str(
     string: &str,
-    color: Rgba,
+    color: graphics::colors::Rgba,
     size: f32,
-    bounds: Bounds,
+    bounds: glue::Bounds,
     layout: wgpu_glyph::Layout<wgpu_glyph::BuiltInLineBreaker>,
 ) -> OwnedSection {
     OwnedSection {
@@ -508,4 +508,24 @@ fn owned_section_from_str(
             .with_color(Vector4::from(color))
             .with_scale(size),
     )
+}
+
+fn roc_keycode(kc : &winit::event::VirtualKeyCode) -> glue::KeyCode {
+    match kc {
+        winit::event::VirtualKeyCode::Down => glue::KeyCode::Down,
+        winit::event::VirtualKeyCode::Left => glue::KeyCode::Left,
+        winit::event::VirtualKeyCode::Right => glue::KeyCode::Right,
+        winit::event::VirtualKeyCode::Up => glue::KeyCode::Up,
+        _ => glue::KeyCode::Other,
+    }
+}
+
+fn tick_event(t : &std::time::Duration) -> glue::Event {
+    let millis = roc_std::U128::from(t.as_millis());
+
+    glue::Event::Tick(millis)
+}
+
+fn to_color(c : glue::Rgba) -> graphics::colors::Rgba {
+    graphics::colors::Rgba::new(c.r, c.g, c.b, c.a)
 }
