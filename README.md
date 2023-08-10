@@ -5,5 +5,10 @@ This is a graphics platform for Roc copied from [roc-lang/examples](https://gith
 
 My goal is to learn more about Roc dev; to explore ideas for the Roc editor, and how to do [Action-State in Roc](https://docs.google.com/document/d/16qY4NGVOHu8mvInVD-ddTajZYSsFvFBvQON_hmyHGfo/edit#).
 
+# Run Example
 
+`roc run examples/hello.roc`
 
+# (Re-)generate Glue 
+
+`roc glue ../roc/crates/glue/src/RustGlue.roc platform/src/glue/ platform/main.roc`
