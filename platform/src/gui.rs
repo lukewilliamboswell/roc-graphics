@@ -1,7 +1,5 @@
-use crate::glue::discriminant_Elem;
+use roc_app::discriminant_Elem;
 use crate::graphics;
-use crate::glue;
-use crate::roc;
 use cgmath::{Vector2, Vector4};
 use glyph_brush::{GlyphCruncher, OwnedSection};
 use std::{
@@ -26,10 +24,26 @@ use winit::{
 
 const TIME_BETWEEN_TICKS: Duration = Duration::new(0, 1000 / 60);
 
-pub fn run_event_loop(title: &str, window_bounds: glue::Bounds) -> Result<(), Box<dyn Error>> {
-    let (mut model, mut elems) = roc::init_and_render(window_bounds);
+pub fn run_event_loop(title: &str, window_bounds: roc_app::Bounds) -> Result<(), Box<dyn Error>> {
+    
+    // Get the program
+    let program = roc_app::mainForHost();
+    let init = program.init;
+    let update = program.update;
+    let render = program.render;
 
-    // Open window and create a surface
+    // Init
+    let mut model : roc_app::Model = roc_app::Model{
+        text: roc_std::RocStr::empty(),
+    }; 
+    
+    model = init.force_thunk(window_bounds);
+    
+    // Render
+    let mut elems: roc_std::RocList<roc_app::Elem> = roc_std::RocList::empty();
+    elems = render.clone().force_thunk(model.to_owned());
+
+    // // Open window and create a surface
     let mut event_loop = winit::event_loop::EventLoop::new();
 
     let window = winit::window::WindowBuilder::new()
@@ -40,11 +54,9 @@ pub fn run_event_loop(title: &str, window_bounds: glue::Bounds) -> Result<(), Bo
 
     macro_rules! update_and_rerender {
         ($event:expr) => {
-            // TODO use (model, elems) =  ... once we've upgraded rust versions
-            let pair = roc::update_and_render(model, $event);
 
-            model = pair.0;
-            elems = pair.1;
+            model = update.clone().force_thunk(model.clone(), $event);
+            elems = render.clone().force_thunk(model.clone()); 
 
             window.request_redraw();
         };
@@ -142,7 +154,7 @@ pub fn run_event_loop(title: &str, window_bounds: glue::Bounds) -> Result<(), Bo
                     &cmd_queue,
                 );
 
-                update_and_rerender!(glue::Event::Resize(glue::Bounds {
+                update_and_rerender!(roc_app::Event::Resize(roc_app::Bounds {
                     height: size.height as f32,
                     width: size.width as f32,
                 }));
@@ -163,11 +175,11 @@ pub fn run_event_loop(title: &str, window_bounds: glue::Bounds) -> Result<(), Bo
             } => {
                 let kc = roc_keycode(&keycode);
                 let roc_event = match input_state {
-                    ElementState::Pressed => glue::Event::KeyDown(kc),
-                    ElementState::Released => glue::Event::KeyUp(kc),
+                    ElementState::Pressed => roc_app::Event::KeyDown(kc),
+                    ElementState::Released => roc_app::Event::KeyUp(kc),
                 };
 
-                model = roc::update(model, roc_event);
+                model = update.clone().force_thunk(model.clone(), roc_event);
             }
             // Modifiers Changed
             Event::WindowEvent {
@@ -194,7 +206,7 @@ pub fn run_event_loop(title: &str, window_bounds: glue::Bounds) -> Result<(), Bo
                 for elem in elems.iter() {
                     let (_bounds, drawable) = to_drawable(
                         elem,
-                        glue::Bounds {
+                        roc_app::Bounds {
                             width: size.width as f32,
                             height: size.height as f32,
                         },
@@ -210,7 +222,7 @@ pub fn run_event_loop(title: &str, window_bounds: glue::Bounds) -> Result<(), Bo
                         &gpu_device,
                         &rect_resources,
                         wgpu::LoadOp::Load,
-                        glue::Bounds {
+                        roc_app::Bounds {
                             width: size.width as f32,
                             height: size.height as f32,
                         },
@@ -310,7 +322,7 @@ fn begin_render_pass<'a>(
 #[derive(Clone, Debug)]
 struct Drawable {
     pos: Vector2<f32>,
-    bounds: glue::Bounds,
+    bounds: roc_app::Bounds,
     content: DrawableContent,
 }
 
@@ -335,7 +347,7 @@ fn process_drawable(
     gpu_device: &wgpu::Device,
     rect_resources: &graphics::lowlevel::pipelines::RectResources,
     load_op: LoadOp<wgpu::Color>,
-    texture_size: glue::Bounds,
+    texture_size: roc_app::Bounds,
 ) {
     draw(
         drawable.bounds,
@@ -353,7 +365,7 @@ fn process_drawable(
 }
 
 fn draw(
-    bounds: glue::Bounds,
+    bounds: roc_app::Bounds,
     content: DrawableContent,
     pos: Vector2<f32>,
     staging_belt: &mut wgpu::util::StagingBelt,
@@ -363,7 +375,7 @@ fn draw(
     gpu_device: &wgpu::Device,
     rect_resources: &graphics::lowlevel::pipelines::RectResources,
     load_op: LoadOp<wgpu::Color>,
-    texture_size: glue::Bounds,
+    texture_size: roc_app::Bounds,
 ) {
     use DrawableContent::*;
 
@@ -414,16 +426,17 @@ fn draw(
 
 /// focused_elem is the currently-focused element (or NULL if nothing has the focus)
 fn to_drawable(
-    elem: &glue::Elem,
-    bounds: glue::Bounds,
+    elem: &roc_app::Elem,
+    bounds: roc_app::Bounds,
     glyph_brush: &mut GlyphBrush<()>,
-) -> (glue::Bounds, Drawable) {
+) -> (roc_app::Bounds, Drawable) {
 
     match elem.discriminant() {
         discriminant_Elem::Rect => {
-            let rect = unsafe { elem.as_Rect() };
 
-            let bounds = glue::Bounds {
+            let rect = roc_app::Elem::unwrap_Rect(elem.clone());
+
+            let bounds = roc_app::Bounds {
                 width: rect.width,
                 height: rect.height,
             };
@@ -441,7 +454,7 @@ fn to_drawable(
             (bounds, drawable)
         },
         discriminant_Elem::Text => {
-            let text = unsafe { elem.as_Text() };
+            let text = roc_app::Elem::unwrap_Text(elem.clone());
 
             let is_centered = true; // TODO don't hardcode this
             let layout = wgpu_glyph::Layout::default().h_align(if is_centered {
@@ -463,7 +476,7 @@ fn to_drawable(
 
             match glyph_brush.glyph_bounds(section.to_borrowed()) {
                 Some(glyph_bounds) => {
-                    text_bounds = glue::Bounds {
+                    text_bounds = roc_app::Bounds {
                         width: glyph_bounds.max.x - glyph_bounds.min.x,
                         height: glyph_bounds.max.y - glyph_bounds.min.y,
                     };
@@ -471,7 +484,7 @@ fn to_drawable(
                     offset = (-glyph_bounds.min.x, -glyph_bounds.min.y).into();
                 }
                 None => {
-                    text_bounds = glue::Bounds {
+                    text_bounds = roc_app::Bounds {
                         width: 0.0,
                         height: 0.0,
                     };
@@ -495,7 +508,7 @@ fn owned_section_from_str(
     string: &str,
     color: graphics::colors::Rgba,
     size: f32,
-    bounds: glue::Bounds,
+    bounds: roc_app::Bounds,
     layout: wgpu_glyph::Layout<wgpu_glyph::BuiltInLineBreaker>,
 ) -> OwnedSection {
     OwnedSection {
@@ -510,22 +523,22 @@ fn owned_section_from_str(
     )
 }
 
-fn roc_keycode(kc : &winit::event::VirtualKeyCode) -> glue::KeyCode {
+fn roc_keycode(kc : &winit::event::VirtualKeyCode) -> roc_app::KeyCode {
     match kc {
-        winit::event::VirtualKeyCode::Down => glue::KeyCode::Down,
-        winit::event::VirtualKeyCode::Left => glue::KeyCode::Left,
-        winit::event::VirtualKeyCode::Right => glue::KeyCode::Right,
-        winit::event::VirtualKeyCode::Up => glue::KeyCode::Up,
-        _ => glue::KeyCode::Other,
+        winit::event::VirtualKeyCode::Down => roc_app::KeyCode::Down,
+        winit::event::VirtualKeyCode::Left => roc_app::KeyCode::Left,
+        winit::event::VirtualKeyCode::Right => roc_app::KeyCode::Right,
+        winit::event::VirtualKeyCode::Up => roc_app::KeyCode::Up,
+        _ => roc_app::KeyCode::Other,
     }
 }
 
-fn tick_event(t : &std::time::Duration) -> glue::Event {
+fn tick_event(t : &std::time::Duration) -> roc_app::Event {
     let millis = roc_std::U128::from(t.as_millis());
-
-    glue::Event::Tick(millis)
+    
+    roc_app::Event::Tick(roc_std::U128::into(millis))
 }
 
-fn to_color(c : glue::Rgba) -> graphics::colors::Rgba {
+fn to_color(c : roc_app::Rgba) -> graphics::colors::Rgba {
     graphics::colors::Rgba::new(c.r, c.g, c.b, c.a)
 }

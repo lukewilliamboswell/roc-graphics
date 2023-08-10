@@ -15,7 +15,8 @@ name = "host"
 path = "src/main.rs"
 
 [dependencies]
-roc_std = { git = "https://github.com/roc-lang/roc", rev = "468be47" }
+roc_std = { path = "src/glue/roc_std" }
+roc_app = { path = "src/glue/roc_app" }
 libc = "0.2"
 arrayvec = "0.7.2"
 page_size = "0.4.2"

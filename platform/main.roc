@@ -1,40 +1,42 @@
-# UNCOMMENT THIS TO USE ROC PLATFORM
 platform "graphics"
-    requires { Model } { program : _ }
+    requires { } { program : Program }
     exposes []
     packages {}
-    imports [Game.{ Bounds, Elem, Event }]
-    provides [programForHost]
+    imports []
+    provides [mainForHost]
 
-programForHost : {
-    init : (Bounds -> Model) as Init,
-    update : (Model, Event -> Model) as Update,
-    # The T (List Elem) Model is a workaround to stop use-after-free bug from 
-    # Roc throwing away long strings on model re-render
-    render : (Model -> [T (List Elem) Model]) as Render,
+Rgba : { r : F32, g : F32, b : F32, a : F32 }
+
+Bounds : { height : F32, width : F32 }
+
+KeyCode : [Left, Right, Other, Up, Down]
+
+Event : [
+    Resize { width : F32, height : F32 }, 
+    KeyDown KeyCode, 
+    KeyUp KeyCode, 
+    Tick U128,
+]
+
+Elem : [
+    Rect { color : Rgba, left : F32, top : F32, width : F32, height : F32 }, 
+    Text { text : Str, color : Rgba, left : F32, top : F32, size : F32 },
+]
+
+# TODO should be provided by App
+Model : {
+    text : Str
 }
-programForHost =
-    {
-        init: program.init,
-        update: program.update,
-        render: \model ->
-            elems = program.render model
-            T elems model
-    }
 
-# UNCOMMENT THIS TO USE ROC GLUE
-# platform "graphics"
-#     requires {  } { program : _ }
-#     exposes [ Model]
-#     packages {}
-#     imports [Game.{ Bounds, Elem, Event }]
-#     provides [programForHost]
+Init : Bounds -> Model
+Update : Model, Event -> Model
+Render : Model -> List Elem
 
-# Model : {}
+Program : {
+    init : Init,
+    update : Update,
+    render : Render,
+}
 
-# programForHost : {
-#     init : (Bounds -> Model) as Init,
-#     update : (Model, Event -> Model) as Update,
-#     render : (Model -> List Elem) as Render,
-# }
-# programForHost = program
+mainForHost : Program
+mainForHost = program
