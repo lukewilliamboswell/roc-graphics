@@ -178,8 +178,6 @@ impl core::fmt::Debug for Elem {
     }
 }
 
-impl Eq for Elem {}
-
 impl PartialEq for Elem {
     fn eq(&self, other: &Self) -> bool {
         use discriminant_Elem::*;
@@ -194,12 +192,6 @@ impl PartialEq for Elem {
                 Text => self.payload.Text == other.payload.Text,
             }
         }
-    }
-}
-
-impl Ord for Elem {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
     }
 }
 
@@ -218,19 +210,6 @@ impl PartialOrd for Elem {
                     Text => self.payload.Text.partial_cmp(&other.payload.Text),
                 }
             },
-        }
-    }
-}
-
-impl core::hash::Hash for Elem {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        use discriminant_Elem::*;
-
-        unsafe {
-            match self.discriminant {
-                Rect => self.payload.Rect.hash(state),
-                Text => self.payload.Text.hash(state),
-            }
         }
     }
 }
@@ -450,8 +429,6 @@ impl core::fmt::Debug for Event {
     }
 }
 
-impl Eq for Event {}
-
 impl PartialEq for Event {
     fn eq(&self, other: &Self) -> bool {
         use discriminant_Event::*;
@@ -468,12 +445,6 @@ impl PartialEq for Event {
                 Tick => self.payload.Tick == other.payload.Tick,
             }
         }
-    }
-}
-
-impl Ord for Event {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
     }
 }
 
@@ -494,21 +465,6 @@ impl PartialOrd for Event {
                     Tick => self.payload.Tick.partial_cmp(&other.payload.Tick),
                 }
             },
-        }
-    }
-}
-
-impl core::hash::Hash for Event {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        use discriminant_Event::*;
-
-        unsafe {
-            match self.discriminant {
-                KeyDown => self.payload.KeyDown.hash(state),
-                KeyUp => self.payload.KeyUp.hash(state),
-                Resize => self.payload.Resize.hash(state),
-                Tick => self.payload.Tick.hash(state),
-            }
         }
     }
 }
